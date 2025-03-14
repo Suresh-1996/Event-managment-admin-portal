@@ -2,6 +2,9 @@ import { useEffect, useState } from "react";
 import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
 import { FaEdit, FaTrash, FaBell } from "react-icons/fa";
+import { io } from "socket.io-client";
+
+const socket = io("http://localhost:5000");
 
 const Dashboard = () => {
   const [events, setEvents] = useState([]);
@@ -9,38 +12,34 @@ const Dashboard = () => {
   const [searchTitle, setSearchTitle] = useState("");
   const [searchDate, setSearchDate] = useState("");
   const [notifications, setNotifications] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false); // State to toggle notifications
   const navigate = useNavigate();
 
-  const token = localStorage.getItem("adminToken"); // Get token from localStorage
-
-  const handleLogout = () => {
-    localStorage.removeItem("adminInfo");
-    navigate("/");
-  };
+  const token = localStorage.getItem("adminToken");
 
   useEffect(() => {
     fetchEvents();
-    fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    socket.on("newBooking", (data) => {
+      console.log(data.message);
+      setNotifications((prev) => [...prev, data.message]);
+      setShowNotifications(true); // Show pop-up
+    });
+
+    return () => {
+      socket.off("newBooking");
+    };
   }, []);
 
   const fetchEvents = async () => {
     try {
       const { data } = await axios.get("http://localhost:5000/api/events");
       setEvents(data);
-      setFilteredEvents(data); // Initialize filtered events
+      setFilteredEvents(data);
     } catch (error) {
       console.error("Error fetching events:", error);
-    }
-  };
-
-  const fetchNotifications = async () => {
-    try {
-      const { data } = await axios.get(
-        "http://localhost:5000/api/notifications"
-      );
-      setNotifications(data);
-    } catch (error) {
-      console.error("Error fetching notifications:", error);
     }
   };
 
@@ -49,7 +48,7 @@ const Dashboard = () => {
       try {
         await axios.delete(`http://localhost:5000/api/events/${id}`, {
           headers: {
-            Authorization: `Bearer ${token}`, // Send JWT token
+            Authorization: `Bearer ${token}`,
           },
         });
         fetchEvents();
@@ -59,47 +58,25 @@ const Dashboard = () => {
     }
   };
 
-  // Filter events based on search input
-  useEffect(() => {
-    const filtered = events.filter((event) => {
-      const matchesTitle = searchTitle
-        ? event.title.toLowerCase().includes(searchTitle.toLowerCase())
-        : true;
-      const matchesDate = searchDate
-        ? new Date(event.date).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-          }) ===
-          new Date(searchDate).toLocaleDateString("en-US", {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-          })
-        : true;
-      return matchesTitle && matchesDate;
-    });
-    setFilteredEvents(filtered);
-  }, [searchTitle, searchDate, events]);
+  const toggleNotifications = () => {
+    setShowNotifications(!showNotifications);
+    if (!showNotifications) {
+      // Clear notifications when pop-up is opened
+      setNotifications([]);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Navbar */}
       <nav className="bg-blue-600 p-4 text-white flex justify-between">
         <Link to="/dashboard" className="font-bold text-lg">
           Admin Dashboard
         </Link>
-        <div className="space-x-4">
+        <div className="space-x-4 relative">
           <button
-            onClick={handleLogout}
-            className="bg-red-400 hover:bg-red-500 px-4 py-2 rounded"
+            onClick={toggleNotifications}
+            className="relative focus:outline-none"
           >
-            Logout
-          </button>
-          <Link to="/create-event" className="hover:text-gray-200">
-            Create Event
-          </Link>
-          <button className="relative">
             <FaBell size={20} />
             {notifications.length > 0 && (
               <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs px-1 rounded-full">
@@ -107,6 +84,40 @@ const Dashboard = () => {
               </span>
             )}
           </button>
+
+          {/* Notifications Pop-up */}
+          {showNotifications && (
+            <div className="absolute right-0 mt-2 w-64 bg-white shadow-lg rounded-lg p-2">
+              <h3 className="font-bold text-gray-700">Notifications</h3>
+              {notifications.length === 0 ? (
+                <p className="text-gray-500">No new notifications</p>
+              ) : (
+                <ul>
+                  {notifications.map((msg, index) => (
+                    <li
+                      key={index}
+                      className="p-2  text-gray-600 border-b last:border-none"
+                    >
+                      {msg}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          <button
+            onClick={() => {
+              localStorage.removeItem("adminInfo");
+              navigate("/");
+            }}
+            className="bg-red-400 hover:bg-red-500 px-4 py-2 rounded"
+          >
+            Logout
+          </button>
+          <Link to="/create-event" className="hover:text-gray-200">
+            Create Event
+          </Link>
         </div>
       </nav>
 
